@@ -76,7 +76,8 @@ public final class Service extends Routable {
     protected Deque<String> pathDeque = new ArrayDeque<>();
     protected Routes routes;
 
-    private CountDownLatch latch = new CountDownLatch(1);
+    private CountDownLatch initLatch = new CountDownLatch(1);
+    private CountDownLatch stopLatch = new CountDownLatch(0);
 
     private Object embeddedServerIdentifier = null;
 
@@ -84,7 +85,7 @@ public final class Service extends Routable {
     public final StaticFiles staticFiles;
 
     private final StaticFilesConfiguration staticFilesConfiguration;
-    private final ExceptionMapper exceptionMapper = ExceptionMapper.getInstance();
+    private final ExceptionMapper exceptionMapper = new ExceptionMapper();
 
     // default exception handler during initialization phase
     private Consumer<Exception> initExceptionHandler = (e) -> {
@@ -180,7 +181,32 @@ public final class Service extends Routable {
                                        String keystorePassword,
                                        String truststoreFile,
                                        String truststorePassword) {
-        return secure(keystoreFile, keystorePassword, truststoreFile, truststorePassword, false);
+        return secure(keystoreFile, keystorePassword, null, truststoreFile, truststorePassword, false);
+    }
+
+    /**
+     * Set the connection to be secure, using the specified keystore and
+     * truststore. This has to be called before any route mapping is done. You
+     * have to supply a keystore file, truststore file is optional (keystore
+     * will be reused). By default, client certificates are not checked.
+     * This method is only relevant when using embedded Jetty servers. It should
+     * not be used if you are using Servlets, where you will need to secure the
+     * connection in the servlet container
+     *
+     * @param keystoreFile       The keystore file location as string
+     * @param keystorePassword   the password for the keystore
+     * @param certAlias          the default certificate Alias
+     * @param truststoreFile     the truststore file location as string, leave null to reuse
+     *                           keystore
+     * @param truststorePassword the trust store password
+     * @return the object with connection set to be secure
+     */
+    public synchronized Service secure(String keystoreFile,
+                                       String keystorePassword,
+                                       String certAlias,
+                                       String truststoreFile,
+                                       String truststorePassword) {
+        return secure(keystoreFile, keystorePassword, certAlias, truststoreFile, truststorePassword, false);
     }
 
     /**
@@ -206,6 +232,34 @@ public final class Service extends Routable {
                                        String truststoreFile,
                                        String truststorePassword,
                                        boolean needsClientCert) {
+        return secure(keystoreFile, keystorePassword, null, truststoreFile, truststorePassword, needsClientCert);
+    }
+
+    /**
+     * Set the connection to be secure, using the specified keystore and
+     * truststore. This has to be called before any route mapping is done. You
+     * have to supply a keystore file, truststore file is optional (keystore
+     * will be reused).
+     * This method is only relevant when using embedded Jetty servers. It should
+     * not be used if you are using Servlets, where you will need to secure the
+     * connection in the servlet container
+     *
+     * @param keystoreFile       The keystore file location as string
+     * @param keystorePassword   the password for the keystore
+     * @param certAlias          the default certificate Alias
+     * @param truststoreFile     the truststore file location as string, leave null to reuse
+     *                           keystore
+     * @param needsClientCert    Whether to require client certificate to be supplied in
+     *                           request
+     * @param truststorePassword the trust store password
+     * @return the object with connection set to be secure
+     */
+    public synchronized Service secure(String keystoreFile,
+                                       String keystorePassword,
+                                       String certAlias,
+                                       String truststoreFile,
+                                       String truststorePassword,
+                                       boolean needsClientCert) {
         if (initialized) {
             throwBeforeRouteMappingException();
         }
@@ -215,7 +269,7 @@ public final class Service extends Routable {
                     "Must provide a keystore file to run secured");
         }
 
-        sslStores = SslStores.create(keystoreFile, keystorePassword, truststoreFile, truststorePassword, needsClientCert);
+        sslStores = SslStores.create(keystoreFile, keystorePassword, certAlias, truststoreFile, truststorePassword, needsClientCert);
         return this;
     }
 
@@ -382,8 +436,12 @@ public final class Service extends Routable {
      * If it's already initialized will return immediately
      */
     public void awaitInitialization() {
+        if (!initialized) {
+    	        throw new IllegalStateException("Server has not been properly initialized");
+        }
+
         try {
-            latch.await();
+            initLatch.await();
         } catch (InterruptedException e) {
             LOG.info("Interrupted by another thread");
             Thread.currentThread().interrupt();
@@ -401,20 +459,43 @@ public final class Service extends Routable {
 
 
     /**
-     * Stops the Spark server and clears all routes
+     * Stops the Spark server and clears all routes.
      */
     public synchronized void stop() {
-        new Thread(() -> {
+    	if (!initialized) {
+    		return;
+    	}
+        initiateStop();
+    }
+    
+    /**
+     * Waits for the Spark server to stop.
+     * <b>Warning:</b> this method should not be called from a request handler.
+     */
+    public void awaitStop() {
+        try {
+            stopLatch.await();
+        } catch (InterruptedException e) {
+            LOG.warn("Interrupted by another thread");
+            Thread.currentThread().interrupt();
+        }
+    }
+    
+    private void initiateStop() {
+    	stopLatch = new CountDownLatch(1);
+        Thread stopThread = new Thread(() -> {
             if (server != null) {
                 server.extinguish();
-                latch = new CountDownLatch(1);
+                initLatch = new CountDownLatch(1);
             }
             
             routes.clear();
             exceptionMapper.clear();
             staticFilesConfiguration.clear();
             initialized = false;
-        }).start();
+            stopLatch.countDown();
+        });
+        stopThread.start();
     }
 
     /**
@@ -484,6 +565,7 @@ public final class Service extends Routable {
 
                     server = EmbeddedServers.create(embeddedServerIdentifier,
                                                     routes,
+                                                    exceptionMapper,
                                                     staticFilesConfiguration,
                                                     hasMultipleHandlers());
 
@@ -500,7 +582,7 @@ public final class Service extends Routable {
                     initExceptionHandler.accept(e);
                   }
                     try {
-                        latch.countDown();
+                        initLatch.countDown();
                         server.join();
                     } catch (InterruptedException e) {
                         LOG.error("server interrupted", e);

@@ -31,9 +31,9 @@ import java.util.TreeSet;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
-import org.eclipse.jetty.util.URIUtil;
 
 import spark.routematch.RouteMatch;
+import spark.utils.urldecoding.UrlDecode;
 import spark.utils.IOUtils;
 import spark.utils.SparkUtils;
 import spark.utils.StringUtils;
@@ -57,6 +57,7 @@ public class Request {
 
     private Session session = null;
     private boolean validSession = false;
+    private String matchedPath = null;
 
 
     /* Lazy loaded stuff */
@@ -100,6 +101,7 @@ public class Request {
      */
     Request(RouteMatch match, HttpServletRequest request) {
         this.servletRequest = request;
+        this.matchedPath = match.getMatchUri();
         changeMatch(match);
     }
 
@@ -120,6 +122,7 @@ public class Request {
         List<String> requestList = SparkUtils.convertRouteToList(match.getRequestURI());
         List<String> matchedList = SparkUtils.convertRouteToList(match.getMatchUri());
 
+        this.matchedPath = match.getMatchUri();
         params = getParams(requestList, matchedList);
         splat = getSplat(requestList, matchedList);
     }
@@ -204,6 +207,12 @@ public class Request {
     }
 
     /**
+     * @return the matched route
+     * Example return: "/account/:accountId"
+     */
+    public String matchedPath() { return this.matchedPath; }
+
+    /**
      * @return the servlet path
      */
     public String servletPath() {
@@ -286,7 +295,7 @@ public class Request {
     /**
      * Gets the query param, or returns default value
      *
-     * @param queryParam the query parameter
+     * @param queryParam   the query parameter
      * @param defaultValue the default value
      * @return the value of the provided queryParam, or default if value is null
      * Example: query parameter 'id' from the following request URI: /hello?id=foo
@@ -497,12 +506,16 @@ public class Request {
 
         for (int i = 0; (i < request.size()) && (i < matched.size()); i++) {
             String matchedPart = matched.get(i);
+
             if (SparkUtils.isParam(matchedPart)) {
-                String decodedReq = URIUtil.decodePath(request.get(i));
+
+                String decodedReq = UrlDecode.path(request.get(i));
+
                 LOG.debug("matchedPart: "
-                                  + matchedPart
-                                  + " = "
-                                  + decodedReq);
+                              + matchedPart
+                              + " = "
+                              + decodedReq);
+
                 params.put(matchedPart.toLowerCase(), decodedReq);
             }
         }

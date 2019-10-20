@@ -4,7 +4,7 @@
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
  *  You may obtain a copy of the License at
- *  
+ *
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -953,6 +953,15 @@ public class Spark {
     }
 
     /**
+     * Set the default response transformer. All requests not using a custom transformer will use this one
+     *
+     * @param transformer
+     */
+    public static void defaultResponseTransformer(ResponseTransformer transformer) {
+        getInstance().defaultResponseTransformer(transformer);
+    }
+
+    /**
      * Set the port that Spark should listen on. If not called the default port
      * is 4567. This has to be called before any route mapping is done.
      * If provided port = 0 then the an arbitrary available port will be used.
@@ -1031,6 +1040,30 @@ public class Spark {
     }
 
     /**
+     * Set the connection to be secure, using the specified keystore and
+     * truststore. This has to be called before any route mapping is done. You
+     * have to supply a keystore file, truststore file is optional (keystore
+     * will be reused).
+     * This method is only relevant when using embedded Jetty servers. It should
+     * not be used if you are using Servlets, where you will need to secure the
+     * connection in the servlet container
+     *
+     * @param keystoreFile       The keystore file location as string
+     * @param keystorePassword   the password for the keystore
+     * @param certAlias          the default certificate Alias
+     * @param truststoreFile     the truststore file location as string, leave null to reuse
+     *                           keystore
+     * @param truststorePassword the trust store password
+     */
+    public static void secure(String keystoreFile,
+                              String keystorePassword,
+                              String certAlias,
+                              String truststoreFile,
+                              String truststorePassword) {
+        getInstance().secure(keystoreFile, keystorePassword, certAlias, truststoreFile, truststorePassword);
+    }
+
+    /**
      * Overrides default exception handler during initialization phase
      *
      * @param initExceptionHandler The custom init exception handler
@@ -1038,8 +1071,8 @@ public class Spark {
     public static void initExceptionHandler(Consumer<Exception> initExceptionHandler) {
         getInstance().initExceptionHandler(initExceptionHandler);
     }
-     
-    /** 
+
+    /**
      * Set the connection to be secure, using the specified keystore and
      * truststore. This has to be called before any route mapping is done. You
      * have to supply a keystore file, truststore file is optional (keystore
@@ -1062,6 +1095,33 @@ public class Spark {
                               String truststorePassword,
                               boolean needsClientCert) {
         getInstance().secure(keystoreFile, keystorePassword, truststoreFile, truststorePassword, needsClientCert);
+    }
+
+    /**
+     * Set the connection to be secure, using the specified keystore and
+     * truststore. This has to be called before any route mapping is done. You
+     * have to supply a keystore file, truststore file is optional (keystore
+     * will be reused).
+     * This method is only relevant when using embedded Jetty servers. It should
+     * not be used if you are using Servlets, where you will need to secure the
+     * connection in the servlet container
+     *
+     * @param keystoreFile       The keystore file location as string
+     * @param keystorePassword   the password for the keystore
+     * @param certAlias          the default certificate Alias
+     * @param truststoreFile     the truststore file location as string, leave null to reuse
+     *                           keystore
+     * @param needsClientCert    Whether to require client certificate to be supplied in
+     *                           request
+     * @param truststorePassword the trust store password
+     */
+    public static void secure(String keystoreFile,
+                              String keystorePassword,
+                              String certAlias,
+                              String truststoreFile,
+                              String truststorePassword,
+                              boolean needsClientCert) {
+        getInstance().secure(keystoreFile, keystorePassword, certAlias, truststoreFile, truststorePassword, needsClientCert);
     }
 
     /**
@@ -1121,6 +1181,14 @@ public class Spark {
      */
     public static void stop() {
         getInstance().stop();
+    }
+    
+    /**
+     * Waits for the Spark server to be stopped.
+     * If it's already stopped, will return immediately.
+     */
+    public static void awaitStop() {
+    	getInstance().awaitStop();
     }
 
     ////////////////
